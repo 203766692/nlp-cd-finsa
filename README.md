@@ -26,6 +26,7 @@
 ├── configs/
 │   └── default.yaml
 ├── scripts/
+│   ├── clean_chinese_data.py
 │   ├── download_data.sh
 │   ├── run_train.sh
 │   └── run_eval.sh
@@ -54,6 +55,7 @@
 | `data/CroFinSA/` | 本地数据目录，原始 JSON 被 `.gitignore` 排除。 |
 | `configs/default.yaml` | 唯一的训练配置，包含模型名、批大小、学习率、轮数和设备等。 |
 | `scripts/download_data.sh` | 根据显式传入的文件 URL 下载数据，不内置未经确认的数据地址。 |
+| `scripts/clean_chinese_data.py` | 过滤非中文样本，并从清洗后的训练集切分本地测试集。 |
 | `scripts/run_train.sh` | 从仓库根目录启动训练，并将全部命令行参数转发给训练模块。 |
 | `scripts/run_eval.sh` | 从仓库根目录启动测试集评估，并将全部命令行参数转发给评估模块。 |
 | `src/data_loader.py` | 读取 JSON、提取正文、归一化标签、处理 tokenizer 并构建 Dataset。 |
@@ -93,7 +95,20 @@ pip install -r requirements.txt
 
 ## 准备数据
 
-从课程平台获取数据后，将文件放到：
+课程提供的原始 MapFinSA 文件通常只有训练集和验证集，没有独立测试集。先将原始文件放到：
+
+```text
+data/CroFinSA/MapFinSA_train.json
+data/CroFinSA/MapFinSA_valid.json
+```
+
+运行中文清洗脚本：
+
+```bash
+python scripts/clean_chinese_data.py
+```
+
+脚本默认只保留 `text` 中 CJK 统一表意文字占比不低于 0.5 的样本，并使用固定随机种子 42 从清洗后的训练集切分 10% 作为本地测试集。原始文件不会被删除或修改。执行后生成：
 
 ```text
 data/CroFinSA/train.json
@@ -101,25 +116,35 @@ data/CroFinSA/valid.json
 data/CroFinSA/test.json
 ```
 
+可以通过参数调整输入、输出目录、中文占比阈值和测试集比例：
+
+```bash
+python scripts/clean_chinese_data.py \
+  --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
+  --output_dir data/CroFinSA \
+  --threshold 0.5 \
+  --test_ratio 0.1
+```
+
+当前 `test.json` 是为了跑通 `evaluate.py` 并生成评测指标而从训练集切分出的本地测试集，不代表官方独立测试结果。如果后续获得官方测试集，请直接替换 `data/CroFinSA/test.json`。清洗后的记录保留原始字段，并增加 `clean_chinese_ratio` 便于抽查中文占比。
+
 如果已经拿到下载 URL，可使用脚本：
 
 ```bash
 TRAIN_URL="训练集地址" \
 VALID_URL="验证集地址" \
-TEST_URL="测试集地址" \
 bash scripts/download_data.sh
 ```
 
-也可分别传入：
+如果课程还提供独立测试集，可额外传入 `TEST_URL`。也可分别传入：
 
 ```bash
 bash scripts/download_data.sh \
   --train-url "训练集地址" \
-  --valid-url "验证集地址" \
-  --test-url "测试集地址"
+  --valid-url "验证集地址"
 ```
 
-若数据由教师直接提供，无需使用下载脚本，按 `data/README.md` 的说明放入本地目录即可。仓库根目录已有的 `MapFinSA_train.json` 和 `MapFinSA_valid.json` 不会被提交，可通过命令行参数直接指定。
+若数据由教师直接提供，无需使用下载脚本，按 `data/README.md` 的说明放入本地目录即可。`data/CroFinSA/MapFinSA_train.json` 和 `data/CroFinSA/MapFinSA_valid.json` 不会被提交，清洗脚本会读取这两个默认路径。
 
 ## 使用方法
 

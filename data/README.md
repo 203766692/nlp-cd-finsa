@@ -6,16 +6,48 @@
 
 课程数据由指导教师或课程平台提供。请先获取数据文件，再放到 `data/CroFinSA/` 下；仓库不提交任何原始 JSON 文件。公开数据可通过 MapFinBen 项目或课程提供的下载地址获取，下载和使用时应遵守数据集的许可与引用要求。
 
-如果已从课程平台取得三个文件的下载地址，可运行：
+如果已从课程平台取得训练集和验证集的下载地址，可运行：
 
 ```bash
 TRAIN_URL="训练集地址" \
 VALID_URL="验证集地址" \
-TEST_URL="测试集地址" \
 bash scripts/download_data.sh
 ```
 
-脚本也支持 `--train-url`、`--valid-url`、`--test-url` 和 `--data-dir` 参数。教师直接提供的本地文件无需下载，手动放入下述目录即可。
+如果课程还提供独立测试集，可额外传入 `TEST_URL`。脚本也支持 `--train-url`、`--valid-url`、`--test-url` 和 `--data-dir` 参数。教师直接提供的本地文件无需下载，手动放入下述目录即可。
+
+课程提供的原始 MapFinSA 文件通常只有训练集和验证集，没有独立测试集。默认原始文件位置为：
+
+```text
+data/CroFinSA/MapFinSA_train.json
+data/CroFinSA/MapFinSA_valid.json
+```
+
+运行中文清洗脚本后，会从清洗后的训练集中随机切分 10% 作为本地测试集：
+
+```bash
+python scripts/clean_chinese_data.py
+```
+
+脚本默认仅保留 `text` 中 CJK 统一表意文字占比不低于 0.5 的样本，并使用固定随机种子 42 保证切分结果稳定。可以通过参数调整：
+
+```bash
+python scripts/clean_chinese_data.py \
+  --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
+  --output_dir data/CroFinSA \
+  --threshold 0.5 \
+  --test_ratio 0.1
+```
+
+清洗脚本不会删除或修改原始文件，输出如下：
+
+```text
+data/CroFinSA/train.json
+data/CroFinSA/valid.json
+data/CroFinSA/test.json
+```
+
+其中 `train.json` 和 `test.json` 来自清洗后的原始训练集，`valid.json` 来自清洗后的原始验证集且不参与切分。原始数据没有官方测试集，因此当前 `test.json` 是为了跑通 `evaluate.py` 而生成的本地测试集。如果后续获得官方独立测试集，请直接替换 `data/CroFinSA/test.json`。
 
 ## 放置路径
 
@@ -28,6 +60,8 @@ data/CroFinSA/test.json
 ```
 
 文件名也可使用 `CroFinSA_train.json`、`CroFinSA_valid.json`、`CroFinSA_test.json` 等常见形式，训练、评估和推理脚本也支持通过 `--train_file`、`--valid_file`、`--test_file` 显式指定路径。
+
+清洗脚本会保留原始样本的全部字段，并增加 `clean_chinese_ratio` 字段记录判定时的中文字符占比，便于人工抽查过滤结果。
 
 ## JSON 字段
 
@@ -43,6 +77,7 @@ data/CroFinSA/test.json
 | `choices` | 候选类别列表。 |
 | `gold` | 候选类别中的正确选项下标，从 0 开始。 |
 | `conversations` | 对话式样本，包含 `human` 提示和 `agent` 回答。 |
+| `clean_chinese_ratio` | 清洗脚本增加的字段，表示非空白字符中 CJK 统一表意文字所占比例。 |
 
 标签会统一为 `negative`、`neutral`、`positive`，并固定按该顺序编码为 0、1、2。当记录同时给出 `choices` 和 `gold` 时，优先根据 `choices[gold]` 解析标签。
 
@@ -50,6 +85,6 @@ data/CroFinSA/test.json
 
 - `train.json`：用于参数更新和模型训练。
 - `valid.json`：用于每个 epoch 后的验证、最佳 checkpoint 选择。
-- `test.json`：仅在最终评估时使用，用于计算 ACC、F1、Macro-F1 和 MCC。
+- `test.json`：仅在最终评估时使用，用于计算 ACC、F1、Macro-F1 和 MCC。原始数据没有测试集时，默认由清洗后的训练集切分 10% 生成本地测试集；若获得官方测试集，应直接替换该文件。
 
 如果数据目录或文件缺失，程序会给出明确的中文错误，不会静默跳过。
