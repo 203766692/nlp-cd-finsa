@@ -55,7 +55,7 @@
 | `data/CroFinSA/` | 本地数据目录，原始 JSON 被 `.gitignore` 排除。 |
 | `configs/default.yaml` | 唯一的训练配置，包含模型名、批大小、学习率、轮数和设备等。 |
 | `scripts/download_data.sh` | 根据显式传入的文件 URL 下载数据，不内置未经确认的数据地址。 |
-| `scripts/clean_chinese_data.py` | 过滤非中文样本，并从清洗后的训练集切分本地测试集。 |
+| `scripts/clean_chinese_data.py` | 通过假名过滤和中文标签校验清洗样本，并切分本地测试集。 |
 | `scripts/run_train.sh` | 从仓库根目录启动训练，并将全部命令行参数转发给训练模块。 |
 | `scripts/run_eval.sh` | 从仓库根目录启动测试集评估，并将全部命令行参数转发给评估模块。 |
 | `src/data_loader.py` | 读取 JSON、提取正文、归一化标签、处理 tokenizer 并构建 Dataset。 |
@@ -108,7 +108,7 @@ data/CroFinSA/MapFinSA_valid.json
 python scripts/clean_chinese_data.py
 ```
 
-脚本默认只保留 `text` 中 CJK 统一表意文字占比不低于 0.5 的样本，并使用固定随机种子 42 从清洗后的训练集切分 10% 作为本地测试集。原始文件不会被删除或修改。执行后生成：
+脚本采用“剔除假名 + 校验中文标签”的联合清洗策略。`text` 中平假名和片假名占非空白字符的比例超过 0.01 时直接过滤；同时要求 `answer`、`label` 或 `choices` 中出现“积极”“消极”或“中性”标签。满足两个条件的样本才会保留，并记录 `clean_chinese_ratio` 供抽查，该比例不参与过滤。训练集切分使用固定随机种子 42，原始文件不会被删除或修改。执行后生成：
 
 ```text
 data/CroFinSA/train.json
@@ -116,17 +116,16 @@ data/CroFinSA/valid.json
 data/CroFinSA/test.json
 ```
 
-可以通过参数调整输入、输出目录、中文占比阈值和测试集比例：
+可以通过参数调整输入、输出目录和测试集比例：
 
 ```bash
 python scripts/clean_chinese_data.py \
   --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
   --output_dir data/CroFinSA \
-  --threshold 0.5 \
   --test_ratio 0.1
 ```
 
-当前 `test.json` 是为了跑通 `evaluate.py` 并生成评测指标而从训练集切分出的本地测试集，不代表官方独立测试结果。如果后续获得官方测试集，请直接替换 `data/CroFinSA/test.json`。清洗后的记录保留原始字段，并增加 `clean_chinese_ratio` 便于抽查中文占比。
+`--threshold` 参数仍保留用于兼容旧版命令，但当前不再参与过滤。当前 `test.json` 是为了跑通 `evaluate.py` 并生成评测指标而从训练集切分出的本地测试集，不代表官方独立测试结果。如果后续获得官方测试集，请直接替换 `data/CroFinSA/test.json`。
 
 如果已经拿到下载 URL，可使用脚本：
 

@@ -1,4 +1,4 @@
-"""清洗 MapFinSA 中文样本，并从训练集切分本地测试集。"""
+"""通过假名过滤和中文标签校验清洗 MapFinSA，并切分本地测试集。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ DEFAULT_OUTPUT_DIR = Path("data/CroFinSA")
 DEFAULT_THRESHOLD = 0.5
 DEFAULT_TEST_RATIO = 0.1
 DEFAULT_SEED = 42
+KANA_RATIO_THRESHOLD = 0.01
+CHINESE_LABELS: tuple[str, str, str] = ("积极", "消极", "中性")
 
 ROLE_ALIASES: dict[str, tuple[str, ...]] = {
     "train": ("train", "training"),
@@ -36,7 +38,8 @@ class CleaningSummary:
     role: str
     original_count: int
     kept_count: int
-    low_ratio_count: int
+    kana_filtered_count: int
+    label_filtered_count: int
     empty_text_count: int
     invalid_record_count: int
     ratios: list[float]
@@ -63,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         "--threshold",
         type=float,
         default=DEFAULT_THRESHOLD,
-        help="保留样本所需的最低中文字符占比，默认 0.5",
+        help="兼容旧版命令；中文占比当前仅记录，不参与过滤",
     )
     parser.add_argument(
         "--test_ratio",
@@ -158,20 +161,83 @@ def calculate_chinese_ratio(text: str) -> float:
     return cjk_count / len(non_whitespace)
 
 
+def is_kana_character(character: str) -> bool:
+    """判断字符是否属于日文平假名或片假名。
+
+    输入单个字符，若位于 `U+3040` 至 `U+309F` 或 `U+30A0` 至 `U+30FF` 则返回 True。
+    """
+    return "\u3040" <= character <= "\u309f" or "\u30a0" <= character <= "\u30ff"
+
+
+def calculate_kana_ratio(text: str) -> float:
+    """计算文本中的日文假名占比。
+
+    输入文本，返回平假名和片假名数量除以全部非空白字符数量的结果；
+    没有非空白字符时返回 0.0。
+    """
+    non_whitespace = [character for character in text if not character.isspace()]
+    if not non_whitespace:
+        return 0.0
+    kana_count = sum(1 for character in non_whitespace if is_kana_character(character))
+    return kana_count / len(non_whitespace)
+
+
+def extract_label_values(value: Any) -> list[str]:
+    """将标签字段转换为待校验字符串列表。
+
+    输入字符串或字符串列表，返回去除首尾空白后的非空字符串列表；
+    其他类型返回空列表。
+    """
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, (list, tuple)):
+        return [
+            item.strip()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        ]
+    return []
+
+
+def has_chinese_label(record: dict[str, Any]) -> bool:
+    """校验样本是否包含中文情感标签。
+
+    输入原始记录，检查存在的 `answer`、`label` 字段及 `choices` 列表；
+    存在的主标签必须是“积极”“消极”或“中性”，若提供 choices 也必须包含中文标签。
+    """
+    found_label = False
+    for field in ("answer", "label"):
+        if field not in record or record[field] in (None, ""):
+            continue
+        values = extract_label_values(record[field])
+        if not values or not any(value in CHINESE_LABELS for value in values):
+            return False
+        found_label = True
+
+    if "choices" in record and record["choices"] is not None:
+        choices = extract_label_values(record["choices"])
+        if not choices or not any(choice in CHINESE_LABELS for choice in choices):
+            return False
+        found_label = True
+
+    return found_label
+
+
 def clean_records(
     records: Sequence[Any],
-    threshold: float,
     role: str,
     source: Path,
 ) -> tuple[list[dict[str, Any]], CleaningSummary]:
-    """过滤非中文记录并保留原始字段。
+    """按假名和中文标签联合条件过滤记录。
 
-    输入原始记录、中文占比阈值、数据划分角色和来源路径，
-    返回保留记录及统计；空文本和低占比记录不会进入输出。
+    输入原始记录、数据划分角色和来源路径，返回保留记录及统计；
+    假名占比超过 1% 或标签不是中文的记录不会进入输出。
     """
     kept_records: list[dict[str, Any]] = []
     ratios: list[float] = []
-    low_ratio_count = 0
+    kana_filtered_count = 0
+    label_filtered_count = 0
     empty_text_count = 0
     invalid_record_count = 0
 
@@ -193,12 +259,17 @@ def clean_records(
             logging.warning("%s 第 %d 条记录没有非空白字符，已过滤", source, index)
             continue
 
-        ratio = calculate_chinese_ratio(text)
-        ratios.append(ratio)
-        if ratio < threshold:
-            low_ratio_count += 1
+        kana_ratio = calculate_kana_ratio(text)
+        if kana_ratio > KANA_RATIO_THRESHOLD:
+            kana_filtered_count += 1
             continue
 
+        if not has_chinese_label(record):
+            label_filtered_count += 1
+            continue
+
+        ratio = calculate_chinese_ratio(text)
+        ratios.append(ratio)
         cleaned_record = dict(record)
         cleaned_record["clean_chinese_ratio"] = round(ratio, 6)
         kept_records.append(cleaned_record)
@@ -208,7 +279,8 @@ def clean_records(
         role=role,
         original_count=len(records),
         kept_count=len(kept_records),
-        low_ratio_count=low_ratio_count,
+        kana_filtered_count=kana_filtered_count,
+        label_filtered_count=label_filtered_count,
         empty_text_count=empty_text_count,
         invalid_record_count=invalid_record_count,
         ratios=ratios,
@@ -283,11 +355,12 @@ def print_summary(summary: CleaningSummary, output_paths: Sequence[Path]) -> Non
     print(
         f"{summary.role}：原始样本数={summary.original_count}，"
         f"清洗后中文样本数={summary.kept_count}，"
-        f"低占比过滤={summary.low_ratio_count}，"
+        f"假名过滤={summary.kana_filtered_count}，"
+        f"标签非中文过滤={summary.label_filtered_count}，"
         f"空文本过滤={summary.empty_text_count}，"
         f"非法记录过滤={summary.invalid_record_count}"
     )
-    print(f"{summary.role} 中文占比分布（参与判定样本）：{format_ratio_distribution(summary.ratios)}")
+    print(f"{summary.role} 中文占比分布（保留样本）：{format_ratio_distribution(summary.ratios)}")
     for output_path in output_paths:
         print(f"{summary.role} 输出：{output_path.resolve()}")
 
@@ -301,8 +374,8 @@ def run_cleaning(
 ) -> None:
     """执行清洗、训练集切分和 JSON 输出。
 
-    输入原始文件列表、输出目录、阈值、测试集比例和随机种子，
-    完成中文过滤并打印统计；原始文件只读不修改。
+    输入原始文件列表、输出目录、兼容阈值、测试集比例和随机种子，
+    完成联合条件过滤并打印统计；原始文件只读不修改。
     """
     if not 0 <= threshold <= 1:
         raise ValueError("--threshold 必须在 0 到 1 之间")
@@ -336,24 +409,27 @@ def run_cleaning(
             )
 
     print(
-        f"清洗参数：中文占比阈值={threshold}，测试集比例={test_ratio}，随机种子={seed}"
+        "清洗策略：假名占比超过 0.01 即过滤；"
+        "answer、label 或 choices 必须包含中文标签。"
+    )
+    print(
+        f"兼容参数 threshold={threshold} 仅保留用于旧命令，不参与过滤；"
+        f"测试集比例={test_ratio}，随机种子={seed}"
     )
 
     train_records, train_summary = clean_records(
         load_records(role_paths["train"], "train"),
-        threshold=threshold,
         role="train",
         source=role_paths["train"],
     )
     if not train_records:
-        raise ValueError("训练集清洗后没有中文样本，请检查输入文件或降低 --threshold")
+        raise ValueError("训练集清洗后没有中文样本，请检查输入文件和联合清洗规则")
 
     cleaned_by_role: dict[str, list[dict[str, Any]]] = {}
     summaries: dict[str, CleaningSummary] = {"train": train_summary}
     if "test" in role_paths:
         test_records, test_summary = clean_records(
             load_records(role_paths["test"], "test"),
-            threshold=threshold,
             role="test",
             source=role_paths["test"],
         )
@@ -373,12 +449,11 @@ def run_cleaning(
     if "valid" in role_paths:
         valid_records, valid_summary = clean_records(
             load_records(role_paths["valid"], "valid"),
-            threshold=threshold,
             role="valid",
             source=role_paths["valid"],
         )
         if not valid_records:
-            raise ValueError("验证集清洗后没有中文样本，请检查输入文件或降低 --threshold")
+            raise ValueError("验证集清洗后没有中文样本，请检查输入文件和联合清洗规则")
         cleaned_by_role["valid"] = valid_records
         summaries["valid"] = valid_summary
 

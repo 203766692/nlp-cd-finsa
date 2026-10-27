@@ -29,15 +29,22 @@ data/CroFinSA/MapFinSA_valid.json
 python scripts/clean_chinese_data.py
 ```
 
-脚本默认仅保留 `text` 中 CJK 统一表意文字占比不低于 0.5 的样本，并使用固定随机种子 42 保证切分结果稳定。可以通过参数调整：
+脚本采用“剔除假名 + 校验中文标签”的联合清洗策略：
+
+- 统计 `text` 中平假名和片假名占全部非空白字符的比例，超过 0.01 时直接过滤。日文常包含大量汉字，仅靠 CJK 汉字占比无法可靠区分中文和日文。
+- 检查 `answer` 或 `label` 字段；字段存在时其主标签必须是“积极”“消极”或“中性”。如果提供 `choices`，候选列表中还必须包含至少一个中文标签。
+- 两个条件都满足后才计算并记录 `clean_chinese_ratio`，该比例不再参与过滤。
+
+训练集与测试集切分使用固定随机种子 42。可以通过参数调整输入、输出目录和测试集比例：
 
 ```bash
 python scripts/clean_chinese_data.py \
   --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
   --output_dir data/CroFinSA \
-  --threshold 0.5 \
   --test_ratio 0.1
 ```
+
+`--threshold` 参数仍可传入以兼容旧命令，但已经不影响样本保留结果。
 
 清洗脚本不会删除或修改原始文件，输出如下：
 
@@ -61,7 +68,7 @@ data/CroFinSA/test.json
 
 文件名也可使用 `CroFinSA_train.json`、`CroFinSA_valid.json`、`CroFinSA_test.json` 等常见形式，训练、评估和推理脚本也支持通过 `--train_file`、`--valid_file`、`--test_file` 显式指定路径。
 
-清洗脚本会保留原始样本的全部字段，并增加 `clean_chinese_ratio` 字段记录判定时的中文字符占比，便于人工抽查过滤结果。
+清洗脚本会保留原始样本的全部字段，并增加 `clean_chinese_ratio` 字段记录通过联合条件后的中文字符占比，便于人工抽查。该字段只是记录信息，不是过滤条件。
 
 ## JSON 字段
 
@@ -77,7 +84,7 @@ data/CroFinSA/test.json
 | `choices` | 候选类别列表。 |
 | `gold` | 候选类别中的正确选项下标，从 0 开始。 |
 | `conversations` | 对话式样本，包含 `human` 提示和 `agent` 回答。 |
-| `clean_chinese_ratio` | 清洗脚本增加的字段，表示非空白字符中 CJK 统一表意文字所占比例。 |
+| `clean_chinese_ratio` | 清洗脚本增加的记录字段，表示保留样本的非空白字符中 CJK 统一表意文字所占比例。 |
 
 标签会统一为 `negative`、`neutral`、`positive`，并固定按该顺序编码为 0、1、2。当记录同时给出 `choices` 和 `gold` 时，优先根据 `choices[gold]` 解析标签。
 
