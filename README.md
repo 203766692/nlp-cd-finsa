@@ -17,7 +17,7 @@
 
 项目默认使用 `hfl/chinese-roberta-wwm-ext`，可在 `configs/default.yaml` 或命令行中替换为其他中文预训练模型。
 
-标签归一化仅支持中文“积极”“中性”“消极”及其同义词，并统一映射到英文标准键 `positive`、`neutral`、`negative`，不再兼容其他语言的标签。
+情感标签仅接受中文“积极”“中性”“消极”，以及内部标准键 positive/neutral/negative；其他标签会直接报错。
 
 ## 项目结构
 

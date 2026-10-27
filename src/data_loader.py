@@ -23,15 +23,10 @@ DEFAULT_INDEX_TO_LABEL: dict[int, str] = {
 _LABEL_ALIASES: dict[str, str] = {
     "negative": "negative",
     "消极": "negative",
-    "负面": "negative",
-    "负向": "negative",
     "neutral": "neutral",
     "中性": "neutral",
-    "中立": "neutral",
     "positive": "positive",
     "积极": "positive",
-    "正面": "positive",
-    "正向": "positive",
 }
 
 _PROMPT_SEPARATOR = re.compile(
