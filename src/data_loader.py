@@ -1,4 +1,4 @@
-"""MapFinBen FinSA 与 CroFinSA 数据读取、标签归一化和 Dataset 构建。"""
+"""CCL 2026 MapFinBen FinSA 中文数据读取、标签归一化和 Dataset 构建。"""
 
 from __future__ import annotations
 
@@ -22,42 +22,20 @@ DEFAULT_INDEX_TO_LABEL: dict[int, str] = {
 
 _LABEL_ALIASES: dict[str, str] = {
     "negative": "negative",
-    "neg": "negative",
     "消极": "negative",
     "负面": "negative",
     "负向": "negative",
-    "ネガティブ": "negative",
-    "negatif": "negative",
-    "negativo": "negative",
-    "negativa": "negative",
-    "αρνητική": "negative",
-    "αρνητικη": "negative",
     "neutral": "neutral",
-    "neut": "neutral",
     "中性": "neutral",
     "中立": "neutral",
-    "ちゅうりつてき": "neutral",
-    "ニュートラル": "neutral",
-    "netral": "neutral",
-    "neutro": "neutral",
-    "neutra": "neutral",
-    "ουδέτερη": "neutral",
-    "ουδετερη": "neutral",
     "positive": "positive",
-    "pos": "positive",
     "积极": "positive",
     "正面": "positive",
     "正向": "positive",
-    "ポジティブ": "positive",
-    "positif": "positive",
-    "positivo": "positive",
-    "positiva": "positive",
-    "θετική": "positive",
-    "θετικη": "positive",
 }
 
 _PROMPT_SEPARATOR = re.compile(
-    r"(?:文本|句子|文|sentence|text)\s*[:：]\s*",
+    r"(?:文本|句子|文|text)\s*[:：]\s*",
     flags=re.IGNORECASE,
 )
 _SPLIT_ALIASES = {
@@ -70,7 +48,8 @@ _SPLIT_ALIASES = {
 def _normalize_label_text(value: str) -> str:
     """规范化文本标签。
 
-    输入原始标签字符串，返回统一兼容字符、大小写并去除空白的文本，便于匹配多语言别名。
+    输入原始标签字符串，返回统一兼容字符、大小写并去除空白的文本，
+    便于匹配中文标签和英文标准类别键。
     """
     normalized = unicodedata.normalize("NFKC", value).strip().casefold()
     return re.sub(r"\s+", "", normalized)
@@ -116,12 +95,11 @@ def _extract_prompt_text(prompt: str) -> str:
 def extract_text(record: dict[str, Any]) -> str:
     """提取单条记录中的金融文本。
 
-    输入原始记录，按 `text`、常见同义字段、`query`、`conversations` 的顺序查找并返回正文。
+    输入原始记录，按 `text`、`query`、`conversations` 的顺序查找并返回中文正文。
     """
-    for field in ("text", "sentence", "content", "headline"):
-        value = record.get(field)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    text = record.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
 
     query = record.get("query")
     if isinstance(query, str) and query.strip():
@@ -134,16 +112,16 @@ def extract_text(record: dict[str, Any]) -> str:
                 continue
             role = str(turn.get("from", "")).lower()
             value = turn.get("value")
-            if role in {"human", "user"} and isinstance(value, str) and value.strip():
+            if role == "human" and isinstance(value, str) and value.strip():
                 return _extract_prompt_text(value)
 
-    raise ValueError("记录中缺少可用文本字段 text、sentence、content、query 或 conversations")
+    raise ValueError("记录中缺少可用文本字段 text、query 或 conversations")
 
 
 def _extract_label(record: dict[str, Any]) -> str:
     """提取单条记录中的情感标签。
 
-    输入原始记录，返回统一标签；同时支持 `label`、`answer`、`sentiment` 和 `gold + choices`。
+    输入原始记录，返回统一标签；支持 `label`、`answer` 和 `gold + choices`。
     """
     choices = record.get("choices")
     if not isinstance(choices, list):
@@ -153,11 +131,11 @@ def _extract_label(record: dict[str, Any]) -> str:
     if gold is not None and choices:
         return normalize_label(gold, choices)
 
-    for field in ("label", "answer", "sentiment", "polarity", "gold"):
+    for field in ("label", "answer", "gold"):
         value = record.get(field)
         if value is not None and value != "":
             return normalize_label(value, choices)
-    raise ValueError("记录中缺少可用标签字段 label、answer、sentiment、polarity 或 gold")
+    raise ValueError("记录中缺少可用标签字段 label、answer 或 gold")
 
 
 def _read_json(path: Path) -> Any:

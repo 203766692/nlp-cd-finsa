@@ -1,8 +1,12 @@
-# 中文金融文本情感分析
+# 中文金融情感分析（CCL 2026 MapFinBen FinSA）
 
 ## 任务简介
 
 本项目对应 CCL 2026 MapFinBen FinSA 中文金融文本情感分析任务。任务目标是对给定的中文金融文本进行情感分类，属于金融领域文本分类任务。模型需要判断文本的情感倾向，分为“消极”、“中性”、“积极”三类。
+
+项目主页：[HgITSE/MapFinBen](https://github.com/HgITSE/MapFinBen)
+
+数据地址：[MapFinBen data](https://github.com/HgITSE/MapFinBen/tree/main/data)
 
 项目基于预训练中文 Transformer 编码器进行微调，在验证集上选择最佳 checkpoint，在测试集上计算以下评价指标：
 
@@ -12,6 +16,8 @@
 - MCC：多分类 Matthews 相关系数，兼顾各类别的真阳性、假阳性和假阴性。
 
 项目默认使用 `hfl/chinese-roberta-wwm-ext`，可在 `configs/default.yaml` 或命令行中替换为其他中文预训练模型。
+
+标签归一化仅支持中文“积极”“中性”“消极”及其同义词，并统一映射到英文标准键 `positive`、`neutral`、`negative`，不再兼容其他语言的标签。
 
 ## 项目结构
 

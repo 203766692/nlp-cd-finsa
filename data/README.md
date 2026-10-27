@@ -76,7 +76,7 @@ data/CroFinSA/test.json
 | `conversations` | 对话式样本，包含人类提示和模型回答。 |
 | `clean_chinese_ratio` | 清洗时记录的中文字符占比，仅供抽查参考。 |
 
-情感标签统一映射为 `negative`、`neutral`、`positive`，对应编码 0、1、2。当记录同时提供 `choices` 和 `gold` 时，程序优先根据 `choices[gold]` 解析标签。
+情感标签仅接受中文“积极”“中性”“消极”及其同义词，并统一映射为英文标准键 `positive`、`neutral`、`negative`，对应编码 2、1、0。当记录同时提供 `choices` 和 `gold` 时，程序优先根据 `choices[gold]` 解析标签。数据加载器不再支持日语、希腊语、印尼语、葡萄牙语等其他语言标签。
 
 ## 数据划分用途
 
