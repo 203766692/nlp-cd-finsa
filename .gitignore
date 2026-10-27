@@ -220,10 +220,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 # 本地数据集，不提交原始数据
-data/**/*.json
-data/**/*.jsonl
-MapFinSA_*.json
-MapFinSA_*.jsonl
 
 # 训练输出
 results/checkpoints/
