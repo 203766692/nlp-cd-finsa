@@ -6,10 +6,9 @@ import argparse
 import math
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import torch
-from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from torch import nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
@@ -22,6 +21,7 @@ from src.data_loader import (
     build_dataset,
     dataset_summary,
 )
+from src.metrics import calculate_metrics
 from src.model import create_model, load_tokenizer
 from src.utils import load_config, resolve_device, set_seed
 
@@ -127,26 +127,6 @@ def _move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[st
     输入批次字典和目标设备，返回移动后的新字典。
     """
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
-
-
-def calculate_metrics(
-    labels: Iterable[int],
-    predictions: Iterable[int],
-) -> dict[str, float]:
-    """计算分类指标。
-
-    输入真实标签和预测标签，返回 ACC、加权 F1、Macro-F1 和 MCC。
-    """
-    label_list = list(labels)
-    prediction_list = list(predictions)
-    if not label_list:
-        raise ValueError("无法在空标签集合上计算评估指标")
-    return {
-        "accuracy": float(accuracy_score(label_list, prediction_list)),
-        "f1": float(f1_score(label_list, prediction_list, average="weighted", zero_division=0)),
-        "macro_f1": float(f1_score(label_list, prediction_list, average="macro", zero_division=0)),
-        "mcc": float(matthews_corrcoef(label_list, prediction_list)),
-    }
 
 
 def evaluate_epoch(

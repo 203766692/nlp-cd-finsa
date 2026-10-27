@@ -7,7 +7,7 @@ import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import torch
 from torch.utils.data import Dataset
@@ -114,7 +114,7 @@ def _extract_prompt_text(prompt: str) -> str:
     return pieces[-1] if pieces else prompt.strip()
 
 
-def _extract_text(record: dict[str, Any]) -> str:
+def extract_text(record: dict[str, Any]) -> str:
     """提取单条记录中的金融文本。
 
     输入原始记录，按 `text`、常见同义字段、`query`、`conversations` 的顺序查找并返回正文。
@@ -263,7 +263,7 @@ def load_records(path: str | Path, split: str, require_labels: bool) -> list[dic
 
     for index, record in enumerate(records, start=1):
         try:
-            text = _extract_text(record)
+            text = extract_text(record)
             label = _extract_label(record) if require_labels else None
         except ValueError as error:
             raise ValueError(
