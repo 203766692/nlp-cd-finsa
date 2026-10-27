@@ -60,13 +60,14 @@ def merge_predict_config(config: dict[str, Any], args: argparse.Namespace) -> di
         "checkpoint": args.checkpoint,
         "output_file": args.output_file,
         "batch_size": args.batch_size,
-        "max_length": args.max_length,
         "num_workers": args.num_workers,
         "device": args.device,
     }
     for key, value in overrides.items():
         if value is not None:
             merged[key] = value
+    if args.max_length is not None:
+        merged["max_length_override"] = args.max_length
     if not merged.get("checkpoint"):
         merged["checkpoint"] = merged["best_checkpoint"]
     if not merged.get("output_file"):
@@ -142,7 +143,10 @@ def load_prediction_inputs(
         id_column = "id" if "id" in frame.columns else None
         records = []
         for index, row in frame.iterrows():
-            record = {"text": str(row[text_column]).strip()}
+            raw_value = str(row[text_column]).strip()
+            if not raw_value or raw_value.lower() == "nan":
+                continue
+            record = {"text": extract_text({text_column: raw_value})}
             record["id"] = str(row[id_column]) if id_column else f"csv-{index + 1}"
             records.append(record)
     elif suffix == ".txt":
@@ -214,7 +218,10 @@ def predict(
         )
 
     records = load_prediction_inputs(text, input_file)
-    max_length = int(config.get("max_length") or metadata.get("max_length", 256))
+    if config.get("max_length_override") is not None:
+        max_length = int(config["max_length_override"])
+    else:
+        max_length = int(metadata.get("max_length", config.get("max_length", 256)))
     dataset = FinancialSentimentDataset(
         texts=[str(record["text"]) for record in records],
         labels=[None] * len(records),

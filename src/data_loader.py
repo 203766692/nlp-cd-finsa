@@ -30,6 +30,7 @@ _LABEL_ALIASES: dict[str, str] = {
     "negatif": "negative",
     "negativo": "negative",
     "negativa": "negative",
+    "αρνητική": "negative",
     "αρνητικη": "negative",
     "neutral": "neutral",
     "neut": "neutral",
@@ -40,6 +41,7 @@ _LABEL_ALIASES: dict[str, str] = {
     "netral": "neutral",
     "neutro": "neutral",
     "neutra": "neutral",
+    "ουδέτερη": "neutral",
     "ουδετερη": "neutral",
     "positive": "positive",
     "pos": "positive",
@@ -50,6 +52,7 @@ _LABEL_ALIASES: dict[str, str] = {
     "positif": "positive",
     "positivo": "positive",
     "positiva": "positive",
+    "θετική": "positive",
     "θετικη": "positive",
 }
 
@@ -67,14 +70,10 @@ _SPLIT_ALIASES = {
 def _normalize_label_text(value: str) -> str:
     """规范化文本标签。
 
-    输入原始标签字符串，返回去空格、统一大小写和重音符号后的文本，便于匹配多语言别名。
+    输入原始标签字符串，返回统一兼容字符、大小写并去除空白的文本，便于匹配多语言别名。
     """
     normalized = unicodedata.normalize("NFKC", value).strip().casefold()
-    decomposed = unicodedata.normalize("NFKD", normalized)
-    without_marks = "".join(
-        character for character in decomposed if not unicodedata.combining(character)
-    )
-    return re.sub(r"\s+", "", without_marks)
+    return re.sub(r"\s+", "", normalized)
 
 
 def normalize_label(value: Any, choices: Sequence[Any] | None = None) -> str:

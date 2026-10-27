@@ -36,11 +36,14 @@ class FinancialSentimentModel(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         token_type_ids: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """执行前向计算并返回分类 logits。
 
-        输入 token id、注意力掩码和可选 token type id，输出形状为 `[batch_size, num_labels]` 的张量。
+        输入 token id、注意力掩码、可选 token type id 和可选标签，
+        输出形状为 `[batch_size, num_labels]` 的张量；损失由训练循环单独计算。
         """
+        del labels
         encoder_inputs: dict[str, torch.Tensor] = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
