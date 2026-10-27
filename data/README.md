@@ -6,35 +6,27 @@
 
 原始数据集（MapFinSA）包含中文、英文、日文等多种语言的金融文本，但本课程设计任务**仅针对中文金融文本**进行情感分类，因此在使用前需要通过清洗脚本过滤出中文样本。
 
-由于版权和文件体积原因，仓库不提交任何原始 JSON 文件或清洗后的数据文件。请参照下文下载并生成数据。
+清洗后的 `train.json`、`valid.json` 和 `test.json` 已提交到仓库，新成员克隆后无需重新运行清洗脚本，可以直接开始训练和评估。
 
 ## 数据下载
 
-课程提供的原始 MapFinSA 文件通常只有训练集和验证集，没有独立测试集。请先将原始文件下载并放到 `data/CroFinSA/` 目录下：
+课程提供的原始 MapFinSA 文件通常只有训练集和验证集，没有独立测试集。当前仓库中的原始文件位置为：
 
 ```text
 data/CroFinSA/MapFinSA_train.json
 data/CroFinSA/MapFinSA_valid.json
 ```
 
-我们已在 `scripts/download_data.sh` 中支持自动下载。你可以直接传入 GitHub Raw 链接执行下载：
-
-```bash
-TRAIN_URL="https://raw.githubusercontent.com/HgITSE/MapFinBen/main/data/MapFinSA/MapFinSA_train.json" \
-VALID_URL="https://raw.githubusercontent.com/HgITSE/MapFinBen/main/data/MapFinSA/MapFinSA_valid.json" \
-bash scripts/download_data.sh
-```
-
-如果你是通过浏览器手动下载的，直接确保文件放在上述路径即可。
+一般不需要重新下载。只有官方原始数据更新或需要重建中文数据集时，才从上述 GitHub 数据目录获取文件并覆盖本地原始文件。
 
 ## 中文数据清洗
 
-由于原始数据集包含多语言，我们需要运行清洗脚本将其转换为纯中文数据集。
+数据清洗脚本位于 `src/clean_chinese_data.py`。仓库已经包含清洗结果；只有原始数据更新或清洗逻辑调整时，才需要重新执行。
 
 运行以下命令：
 
 ```bash
-python scripts/clean_chinese_data.py
+python src/clean_chinese_data.py
 ```
 
 脚本采用“剔除假名 + 校验中文标签”的联合清洗策略：
@@ -45,7 +37,7 @@ python scripts/clean_chinese_data.py
 由于官方数据没有测试集，脚本会从清洗后的训练集中随机切分 10%（固定随机种子 42）作为本地测试集。你可以通过参数调整输入路径或切分比例：
 
 ```bash
-python scripts/clean_chinese_data.py \
+python src/clean_chinese_data.py \
   --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
   --output_dir data/CroFinSA \
   --test_ratio 0.1

@@ -25,19 +25,15 @@
 .
 ├── requirements.txt              记录程序运行所需的主要Python库及宽松版本范围。
 ├── README.md                     项目主说明文档。
-├── .gitignore                    配置 Git 忽略规则，排除数据、模型权重等。
+├── .gitignore                    配置 Git 忽略规则，排除缓存、模型权重和环境文件。
 ├── data/
 │   ├── README.md                 说明数据集名称、来源或下载地址及数据使用方式。
-│   └── CroFinSA/                 本地数据目录，原始和清洗后的 JSON 文件被 Git 忽略。
+│   └── CroFinSA/                 原始数据及已提交的 train/valid/test 清洗数据。
 ├── configs/
 │   └── default.yaml              唯一的训练配置，包含模型名、批大小、学习率、轮数和设备等。
-├── scripts/
-│   ├── clean_chinese_data.py     通过假名过滤和中文标签校验清洗样本，并切分本地测试集。
-│   ├── download_data.sh          根据显式传入的文件 URL 下载数据，不内置未经确认的数据地址。
-│   ├── run_train.sh              从仓库根目录启动训练，并将全部命令行参数转发给训练模块。
-│   └── run_eval.sh               从仓库根目录启动测试集评估，并将全部命令行参数转发给评估模块。
 ├── src/
 │   ├── __init__.py               标记 src 为 Python 模块。
+│   ├── clean_chinese_data.py     通过假名过滤和中文标签校验清洗样本，并切分本地测试集。
 │   ├── data_loader.py            读取 JSON、提取正文、归一化中文标签、处理 tokenizer 并构建 Dataset。
 │   ├── model.py                  加载预训练编码器、增加分类头、恢复 checkpoint。
 │   ├── utils.py                  读取 YAML、解析设备、设置随机种子等公共工具函数。
@@ -79,29 +75,27 @@ pip install -r requirements.txt
 
 ## 准备数据
 
-本任务的官方数据托管在 GitHub 上，数据地址为：`https://github.com/HgITSE/MapFinBen/tree/main/data`（其中包含 `MapFinSA` 文件夹）。课程提供的原始 MapFinSA 文件通常只有训练集和验证集，没有独立测试集。
+本任务的官方数据托管在 GitHub 上，数据地址为：`https://github.com/HgITSE/MapFinBen/tree/main/data`（其中包含 `MapFinSA` 文件夹）。清洗后的数据已经提交到仓库，新成员克隆后可以直接使用：
 
-请先将原始文件下载并放到 `data/CroFinSA/` 目录下：
+```text
+data/CroFinSA/train.json
+data/CroFinSA/valid.json
+data/CroFinSA/test.json
+```
+
+原始 MapFinSA 文件通常只有训练集和验证集，当前也保存在：
 
 ```text
 data/CroFinSA/MapFinSA_train.json
 data/CroFinSA/MapFinSA_valid.json
 ```
 
-我们已经在 `scripts/download_data.sh` 中支持自动下载。你可以直接传入 GitHub Raw 链接执行下载：
-
-```bash
-TRAIN_URL="https://raw.githubusercontent.com/HgITSE/MapFinBen/main/data/MapFinSA/MapFinSA_train.json" \
-VALID_URL="https://raw.githubusercontent.com/HgITSE/MapFinBen/main/data/MapFinSA/MapFinSA_valid.json" \
-bash scripts/download_data.sh
-```
-
-如果你是通过浏览器手动下载的，直接确保文件放在上述路径即可。
+一般无需重新下载或清洗。只有原始数据更新或清洗逻辑调整时，才需要重新运行清洗脚本。
 
 由于原始数据集包含多语言（如日语），而本任务仅针对中文，我们需要运行中文清洗脚本：
 
 ```bash
-python scripts/clean_chinese_data.py
+python src/clean_chinese_data.py
 ```
 
 脚本采用“剔除假名 + 校验中文标签”的联合清洗策略。`text` 中平假名和片假名占非空白字符的比例超过 0.01 时直接过滤；同时要求 `answer`、`label` 或 `choices` 中出现“积极”“消极”或“中性”标签。训练集切分使用固定随机种子 42，原始文件不会被删除或修改。执行后生成：
@@ -115,7 +109,7 @@ data/CroFinSA/test.json
 可以通过参数调整输入、输出目录和测试集比例：
 
 ```bash
-python scripts/clean_chinese_data.py \
+python src/clean_chinese_data.py \
   --input data/CroFinSA/MapFinSA_train.json data/CroFinSA/MapFinSA_valid.json \
   --output_dir data/CroFinSA \
   --test_ratio 0.1
@@ -125,16 +119,10 @@ python scripts/clean_chinese_data.py \
 
 ## 使用方法
 
-默认配置在 `configs/default.yaml` 中，面向 GPU 训练机，使用 `cuda`、`batch_size=16` 和混合精度。在仓库根目录运行：
+默认配置在 `configs/default.yaml` 中，面向 GPU 训练机，使用 `cuda`、`batch_size=16` 和混合精度。三个入口脚本会直接读取该配置，不需要传入 `--config`。在仓库根目录运行：
 
 ```bash
-bash scripts/run_train.sh
-```
-
-也可以直接调用 Python 模块：
-
-```bash
-python -m src.train --config configs/default.yaml
+python src/train.py
 ```
 
 训练结束后，最佳模型保存到 `results/checkpoints/best_model.pt`，最后一轮模型保存到 `results/checkpoints/last_model.pt`。
@@ -142,7 +130,7 @@ python -m src.train --config configs/default.yaml
 本地无 GPU 使用 CPU 调试时，不需要额外配置文件，直接在命令行覆盖关键参数：
 
 ```bash
-python -m src.train \
+python src/train.py \
   --device cpu \
   --batch_size 2 \
   --eval_batch_size 2 \
@@ -150,27 +138,18 @@ python -m src.train \
   --num_workers 0
 ```
 
-CPU 模式下即使配置中的 `fp16` 为 `true`，训练脚本也会自动关闭混合精度。若当前数据仍位于根目录，可显式传入路径：
-
-```bash
-python -m src.train \
-  --device cpu \
-  --batch_size 2 \
-  --epochs 1 \
-  --train_file MapFinSA_train.json \
-  --valid_file MapFinSA_valid.json
-```
+CPU 模式下即使配置中的 `fp16` 为 `true`，训练脚本也会自动关闭混合精度。
 
 测试集评估使用：
 
 ```bash
-bash scripts/run_eval.sh
+python src/evaluate.py
 ```
 
 CPU 调试可运行：
 
 ```bash
-python -m src.evaluate \
+python src/evaluate.py \
   --device cpu \
   --batch_size 4 \
   --checkpoint results/checkpoints/best_model.pt \
@@ -182,7 +161,7 @@ python -m src.evaluate \
 单条文本推理：
 
 ```bash
-python -m src.predict \
+python src/predict.py \
   --device cpu \
   --checkpoint results/checkpoints/best_model.pt \
   --text "公司本季度净利润同比增长20%，经营活动现金流明显改善。"
@@ -191,7 +170,7 @@ python -m src.predict \
 批量推理支持 JSON、JSONL、CSV 和 TXT：
 
 ```bash
-python -m src.predict \
+python src/predict.py \
   --device cpu \
   --checkpoint results/checkpoints/best_model.pt \
   --input_file data/CroFinSA/test.json \
@@ -204,5 +183,5 @@ CSV 输入需包含 `text`、`sentence`、`content` 或 `query` 之一作为文�
 
 - 数据路径不写死在代码中，默认值集中在 `configs/default.yaml`，可通过 `--train_file`、`--valid_file`、`--test_file` 覆盖。
 - 推理和评估优先读取 checkpoint 内记录的模型名称、标签顺序和最大长度，避免训练与部署错位。
-- `data/CroFinSA/*.json`、`results/checkpoints/`、缓存和环境变量文件均不会提交。
+- `data/CroFinSA/` 下清洗后的 JSON 已提交，方便团队成员直接共享；`results/checkpoints/`、缓存和环境变量文件仍不会提交。
 - 训练机可根据显存调整 `batch_size`、`eval_batch_size` 和 `gradient_accumulation_steps`，不需要新建配置文件。

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -15,15 +16,18 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.data_loader import (
     LABEL_NAMES,
-    FinancialSentimentDataset,
     build_dataset,
     dataset_summary,
 )
 from src.metrics import calculate_metrics
 from src.model import create_model, load_tokenizer
-from src.utils import load_config, resolve_device, set_seed
+from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device, set_seed
 
 
 def _parse_bool(value: str | bool) -> bool:
@@ -44,10 +48,9 @@ def _parse_bool(value: str | bool) -> bool:
 def parse_args() -> argparse.Namespace:
     """解析训练命令行参数。
 
-    无输入，返回参数对象；未显式传入的字段会沿用 `configs/default.yaml`。
+    无输入，返回参数对象；仅保留常用覆盖项，未传入时完全沿用默认配置。
     """
     parser = argparse.ArgumentParser(description="训练中文金融情感分类模型")
-    parser.add_argument("--config", default="configs/default.yaml", help="YAML 配置文件路径")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--model_name", default=None, help="预训练模型名称或本地路径")
     parser.add_argument("--dropout", type=float, default=None, help="分类头前的 dropout")
@@ -373,9 +376,9 @@ def train(config: dict[str, Any]) -> Path:
 
 
 def main() -> None:
-    """读取配置、合并命令行参数并启动训练。"""
+    """读取项目默认配置、合并可选参数并启动训练。"""
     args = parse_args()
-    config = merge_config(load_config(args.config), args)
+    config = merge_config(load_config(DEFAULT_CONFIG_PATH), args)
     train(config)
 
 

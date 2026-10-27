@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data_loader import (
     LABEL_NAMES,
@@ -18,7 +23,7 @@ from src.data_loader import (
     load_records,
 )
 from src.model import load_checkpoint
-from src.utils import load_config, resolve_device
+from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device
 
 LABEL_ZH = {
     "negative": "消极",
@@ -30,10 +35,9 @@ LABEL_ZH = {
 def parse_args() -> argparse.Namespace:
     """解析推理命令行参数。
 
-    无输入，返回参数对象；单条文本和批量输入文件必须二选一。
+    无输入，返回参数对象；单条文本和批量输入文件必须二选一，其他字段沿用默认配置。
     """
     parser = argparse.ArgumentParser(description="对金融文本执行情感推理")
-    parser.add_argument("--config", default="configs/default.yaml", help="YAML 配置文件路径")
     parser.add_argument("--checkpoint", default=None, help="推理 checkpoint 路径")
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--text", default=None, help="单条待推理文本")
@@ -266,9 +270,9 @@ def predict(
 
 
 def main() -> None:
-    """读取配置、合并参数并启动单条或批量推理。"""
+    """读取项目默认配置、合并可选参数并启动单条或批量推理。"""
     args = parse_args()
-    config = merge_predict_config(load_config(args.config), args)
+    config = merge_predict_config(load_config(DEFAULT_CONFIG_PATH), args)
     predict(config, args.text, args.input_file)
 
 

@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUTS: tuple[Path, ...] = (
-    Path("data/CroFinSA/MapFinSA_train.json"),
-    Path("data/CroFinSA/MapFinSA_valid.json"),
+    PROJECT_ROOT / "data/CroFinSA/MapFinSA_train.json",
+    PROJECT_ROOT / "data/CroFinSA/MapFinSA_valid.json",
 )
-DEFAULT_OUTPUT_DIR = Path("data/CroFinSA")
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data/CroFinSA"
 DEFAULT_THRESHOLD = 0.5
 DEFAULT_TEST_RATIO = 0.1
 DEFAULT_SEED = 42

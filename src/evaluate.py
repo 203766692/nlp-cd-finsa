@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,19 +13,22 @@ from sklearn.metrics import classification_report, confusion_matrix
 from torch import nn
 from torch.utils.data import DataLoader
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.data_loader import LABEL_NAMES, build_dataset, dataset_summary
 from src.metrics import calculate_metrics
 from src.model import load_checkpoint
-from src.utils import load_config, resolve_device
+from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device
 
 
 def parse_args() -> argparse.Namespace:
     """解析评估命令行参数。
 
-    无输入，返回参数对象；未指定的路径与批大小会从配置文件读取。
+    无输入，返回参数对象；未指定的路径与批大小完全沿用默认配置。
     """
     parser = argparse.ArgumentParser(description="评估中文金融情感分类模型")
-    parser.add_argument("--config", default="configs/default.yaml", help="YAML 配置文件路径")
     parser.add_argument("--checkpoint", default=None, help="待评估 checkpoint 路径")
     parser.add_argument("--test_file", default=None, help="测试集 JSON 路径")
     parser.add_argument("--output_file", default=None, help="指标 JSON 输出路径")
@@ -180,9 +184,9 @@ def evaluate(config: dict[str, Any]) -> Path:
 
 
 def main() -> None:
-    """读取配置、合并参数并执行测试集评估。"""
+    """读取项目默认配置、合并可选参数并执行测试集评估。"""
     args = parse_args()
-    config = merge_eval_config(load_config(args.config), args)
+    config = merge_eval_config(load_config(DEFAULT_CONFIG_PATH), args)
     evaluate(config)
 
 

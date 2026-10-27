@@ -219,7 +219,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# 本地数据集，不提交原始数据
-
 # 训练输出
 results/checkpoints/
