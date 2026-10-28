@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from torch.optim import AdamW
@@ -22,12 +27,19 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.data_loader import (
     LABEL_NAMES,
+    FinancialSentimentDataset,
     build_dataset,
     dataset_summary,
 )
 from src.metrics import calculate_metrics
 from src.model import create_model, load_tokenizer
-from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device, set_seed
+from src.utils import (
+    DEFAULT_CONFIG_PATH,
+    load_config,
+    resolve_device,
+    resolve_experiment_dir,
+    set_seed,
+)
 
 
 def _parse_bool(value: str | bool) -> bool:
@@ -56,8 +68,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dropout", type=float, default=None, help="分类头前的 dropout")
     parser.add_argument("--train_file", default=None, help="训练集 JSON 路径")
     parser.add_argument("--valid_file", default=None, help="验证集 JSON 路径")
-    parser.add_argument("--checkpoint_dir", default=None, help="checkpoint 输出目录")
-    parser.add_argument("--best_checkpoint", default=None, help="最佳模型保存路径")
     parser.add_argument("--batch_size", type=int, default=None, help="训练批大小")
     parser.add_argument("--eval_batch_size", type=int, default=None, help="验证批大小")
     parser.add_argument("--learning_rate", type=float, default=None, help="学习率")
@@ -114,13 +124,6 @@ def merge_config(config: dict[str, Any], args: argparse.Namespace) -> dict[str, 
         value = getattr(args, field)
         if value is not None:
             merged[field] = value
-
-    if args.checkpoint_dir is not None:
-        merged["checkpoint_dir"] = args.checkpoint_dir
-        if args.best_checkpoint is None:
-            merged["best_checkpoint"] = str(Path(args.checkpoint_dir) / "best_model.pt")
-    if args.best_checkpoint is not None:
-        merged["best_checkpoint"] = args.best_checkpoint
     return merged
 
 
@@ -130,6 +133,94 @@ def _move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[st
     输入批次字典和目标设备，返回移动后的新字典。
     """
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
+
+
+def create_grad_scaler(use_fp16: bool) -> torch.amp.GradScaler:
+    """创建混合精度梯度缩放器。
+
+    输入是否启用混合精度，返回现代 `torch.amp.GradScaler`；
+    旧版 PyTorch 不支持时回退到 CUDA 命名空间实现。
+    """
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        return torch.amp.GradScaler("cuda", enabled=use_fp16)
+    return torch.cuda.amp.GradScaler(enabled=use_fp16)
+
+
+def create_loss_function(
+    config: dict[str, Any],
+    train_dataset: FinancialSentimentDataset,
+    device: torch.device,
+) -> nn.CrossEntropyLoss:
+    """创建训练损失函数。
+
+    输入配置、训练集和目标设备；启用类权重时，根据训练集类别频次计算平衡权重。
+    """
+    if not bool(config.get("use_class_weights", False)):
+        return nn.CrossEntropyLoss()
+
+    counts = train_dataset.class_counts()
+    zero_classes = [label for label, count in counts.items() if count == 0]
+    if zero_classes:
+        raise ValueError(f"无法计算类别权重，以下类别没有训练样本：{', '.join(zero_classes)}")
+
+    total_samples = sum(counts.values())
+    class_weights = [
+        total_samples / (len(LABEL_NAMES) * counts[label])
+        for label in LABEL_NAMES
+    ]
+    print(
+        "启用类别权重："
+        + "，".join(
+            f"{label}={weight:.4f}"
+            for label, weight in zip(LABEL_NAMES, class_weights, strict=True)
+        )
+    )
+    weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=device)
+    return nn.CrossEntropyLoss(weight=weight_tensor)
+
+
+def save_training_history(history: dict[str, list[float]], output_path: Path) -> None:
+    """保存逐轮训练历史。
+
+    输入历史字典和输出路径，将 Loss、ACC、F1、Macro-F1、MCC 按 epoch 写入 JSON。
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as file:
+        json.dump(history, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+
+
+def plot_training_curves(
+    history: dict[str, list[float]],
+    output_path: Path,
+    experiment_name: str,
+) -> None:
+    """绘制训练与验证 Loss 以及验证 Macro-F1 曲线。
+
+    输入历史字典、输出图片路径和实验名称，生成双面板曲线图，无返回值。
+    """
+    epochs = history["epoch"]
+    figure, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    axes[0].plot(epochs, history["train_loss"], marker="o", label="Train loss")
+    axes[0].plot(epochs, history["valid_loss"], marker="o", label="Valid loss")
+    axes[0].set_title("Loss")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Loss")
+    axes[0].legend()
+    axes[0].grid(alpha=0.25)
+
+    axes[1].plot(epochs, history["macro_f1"], marker="o", color="#2a6f97")
+    axes[1].set_title("Validation Macro-F1")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Macro-F1")
+    axes[1].set_ylim(0, 1)
+    axes[1].grid(alpha=0.25)
+
+    figure.suptitle(f"Experiment: {experiment_name}")
+    figure.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
 
 
 def evaluate_epoch(
@@ -270,6 +361,11 @@ def train(config: dict[str, Any]) -> Path:
         weight_decay=float(config.get("weight_decay", 0.0)),
     )
     epochs = int(config["epochs"])
+    if epochs <= 0:
+        raise ValueError("epochs 必须为正整数")
+    early_stopping_patience = int(config.get("early_stopping_patience", 2))
+    if early_stopping_patience < 0:
+        raise ValueError("early_stopping_patience 不能为负数")
     accumulation_steps = max(int(config.get("gradient_accumulation_steps", 1)), 1)
     update_steps_per_epoch = math.ceil(len(train_loader) / accumulation_steps)
     total_training_steps = max(update_steps_per_epoch * epochs, 1)
@@ -279,15 +375,30 @@ def train(config: dict[str, Any]) -> Path:
         num_warmup_steps=warmup_steps,
         num_training_steps=total_training_steps,
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
-    loss_function = nn.CrossEntropyLoss()
+    scaler = create_grad_scaler(use_fp16)
+    loss_function = create_loss_function(config, train_dataset, device)
 
+    experiment_name = str(config["experiment_name"]).strip()
+    experiment_dir = resolve_experiment_dir(experiment_name)
+    experiment_dir.mkdir(parents=True, exist_ok=True)
     best_metric_name = str(config.get("save_best_metric", "macro_f1"))
     best_metric_value = float("-inf")
-    best_checkpoint = Path(config["best_checkpoint"])
-    checkpoint_dir = Path(config["checkpoint_dir"])
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    last_checkpoint = checkpoint_dir / "last_model.pt"
+    best_epoch = 0
+    best_checkpoint = experiment_dir / "best_model.pt"
+    last_checkpoint = experiment_dir / "last_model.pt"
+    history_path = experiment_dir / "training_history.json"
+    curves_path = experiment_dir / "training_curves.png"
+    history: dict[str, list[float]] = {
+        "epoch": [],
+        "train_loss": [],
+        "valid_loss": [],
+        "accuracy": [],
+        "f1": [],
+        "macro_f1": [],
+        "mcc": [],
+    }
+    no_improvement_epochs = 0
+    print(f"实验名称：{experiment_name}，输出目录：{experiment_dir.resolve()}")
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -320,9 +431,11 @@ def train(config: dict[str, Any]) -> Path:
                     model.parameters(),
                     max_norm=float(config.get("max_grad_norm", 1.0)),
                 )
+                scale_before_update = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
-                scheduler.step()
+                if scaler.get_scale() >= scale_before_update:
+                    scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
             progress.set_postfix(loss=f"{running_loss / max(processed_samples, 1):.4f}")
@@ -334,14 +447,22 @@ def train(config: dict[str, Any]) -> Path:
             device=device,
             use_fp16=use_fp16,
         )
+        train_loss = running_loss / max(processed_samples, 1)
         print(
-            f"第 {epoch} 轮：train_loss={running_loss / max(processed_samples, 1):.4f}，"
+            f"第 {epoch} 轮：train_loss={train_loss:.4f}，"
             f"valid_loss={validation_loss:.4f}，"
             f"ACC={validation_metrics['accuracy']:.4f}，"
             f"F1={validation_metrics['f1']:.4f}，"
             f"Macro-F1={validation_metrics['macro_f1']:.4f}，"
             f"MCC={validation_metrics['mcc']:.4f}"
         )
+        history["epoch"].append(float(epoch))
+        history["train_loss"].append(train_loss)
+        history["valid_loss"].append(validation_loss)
+        history["accuracy"].append(validation_metrics["accuracy"])
+        history["f1"].append(validation_metrics["f1"])
+        history["macro_f1"].append(validation_metrics["macro_f1"])
+        history["mcc"].append(validation_metrics["mcc"])
 
         save_checkpoint(
             path=last_checkpoint,
@@ -358,6 +479,8 @@ def train(config: dict[str, Any]) -> Path:
         current_metric = float(validation_metrics[best_metric_name])
         if current_metric > best_metric_value:
             best_metric_value = current_metric
+            best_epoch = epoch
+            no_improvement_epochs = 0
             save_checkpoint(
                 path=best_checkpoint,
                 model=model,
@@ -370,8 +493,24 @@ def train(config: dict[str, Any]) -> Path:
                 train_config=config,
             )
             print(f"已保存最佳模型：{best_checkpoint.resolve()}")
+        else:
+            no_improvement_epochs += 1
+            print(f"验证指标未提升，连续 {no_improvement_epochs} 轮")
+            if (
+                early_stopping_patience > 0
+                and no_improvement_epochs >= early_stopping_patience
+            ):
+                print(f"触发早停：连续 {early_stopping_patience} 轮未提升")
+                break
 
-    print(f"训练完成，最佳验证 {best_metric_name}={best_metric_value:.4f}")
+    save_training_history(history, history_path)
+    plot_training_curves(history, curves_path, experiment_name)
+    print(
+        f"训练完成，最佳验证 {best_metric_name}={best_metric_value:.4f}，"
+        f"最佳 epoch={best_epoch}"
+    )
+    print(f"训练历史：{history_path.resolve()}")
+    print(f"训练曲线：{curves_path.resolve()}")
     return best_checkpoint
 
 

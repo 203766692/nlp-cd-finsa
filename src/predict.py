@@ -23,7 +23,12 @@ from src.data_loader import (
     load_records,
 )
 from src.model import load_checkpoint
-from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device
+from src.utils import (
+    DEFAULT_CONFIG_PATH,
+    load_config,
+    resolve_device,
+    resolve_experiment_dir,
+)
 
 LABEL_ZH = {
     "negative": "消极",
@@ -72,10 +77,11 @@ def merge_predict_config(config: dict[str, Any], args: argparse.Namespace) -> di
             merged[key] = value
     if args.max_length is not None:
         merged["max_length_override"] = args.max_length
+    experiment_dir = resolve_experiment_dir(str(merged["experiment_name"]))
     if not merged.get("checkpoint"):
-        merged["checkpoint"] = merged["best_checkpoint"]
+        merged["checkpoint"] = str(experiment_dir / "best_model.pt")
     if not merged.get("output_file"):
-        merged["output_file"] = "results/predictions.csv"
+        merged["output_file"] = str(experiment_dir / "predictions.csv")
     return merged
 
 
@@ -213,8 +219,15 @@ def predict(
     输入配置、单条文本或批量文件，返回预测结果路径。
     """
     device = resolve_device(str(config["device"]))
+    experiment_name = str(config["experiment_name"]).strip()
     checkpoint_path = Path(str(config["checkpoint"]))
     model, tokenizer, metadata = load_checkpoint(checkpoint_path, device)
+    checkpoint_experiment = metadata.get("train_config", {}).get("experiment_name")
+    if checkpoint_experiment and str(checkpoint_experiment) != experiment_name:
+        raise ValueError(
+            f"checkpoint 属于实验 {checkpoint_experiment}，"
+            f"但当前配置为 {experiment_name}"
+        )
     label_names = tuple(metadata["label_names"])
     if label_names != LABEL_NAMES:
         raise ValueError(

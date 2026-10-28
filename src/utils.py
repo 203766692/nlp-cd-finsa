@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
+EXPERIMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
@@ -48,6 +50,20 @@ def resolve_device(device_name: str) -> torch.device:
     if normalized not in {"cpu", "cuda"}:
         raise ValueError(f"不支持的设备：{device_name}，可选值为 cpu、cuda、auto")
     return torch.device(normalized)
+
+
+def resolve_experiment_dir(experiment_name: str) -> Path:
+    """解析实验输出目录。
+
+    输入实验名称，返回 `results/<experiment_name>` 目录；名称不合法时抛出中文错误。
+    """
+    name = str(experiment_name).strip()
+    if not EXPERIMENT_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            "experiment_name 只能包含英文字母、数字、下划线和短横线，"
+            f"当前值为：{experiment_name!r}"
+        )
+    return PROJECT_ROOT / "results" / name
 
 
 def set_seed(seed: int) -> None:

@@ -1,0 +1,58 @@
+{
+  "experiment_name": "baseline",
+  "model": "TF-IDF char n-gram + LogisticRegression",
+  "seed": 42,
+  "use_class_weights": false,
+  "train_file": "D:\\homework\\NLP\\课程设计-第04组\\源代码\\data\\CroFinSA\\train.json",
+  "test_file": "D:\\homework\\NLP\\课程设计-第04组\\源代码\\data\\CroFinSA\\test.json",
+  "num_train_samples": 3146,
+  "num_test_samples": 350,
+  "label_names": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "metrics": {
+    "accuracy": 0.642857,
+    "f1": 0.600688,
+    "macro_f1": 0.544343,
+    "mcc": 0.4428
+  },
+  "per_class": {
+    "negative": {
+      "precision": 0.678082191780822,
+      "recall": 0.7443609022556391,
+      "f1": 0.7096774193548387,
+      "support": 133
+    },
+    "neutral": {
+      "precision": 0.43478260869565216,
+      "recall": 0.12658227848101267,
+      "f1": 0.19607843137254902,
+      "support": 79
+    },
+    "positive": {
+      "precision": 0.6408839779005525,
+      "recall": 0.8405797101449275,
+      "f1": 0.7272727272727273,
+      "support": 138
+    }
+  },
+  "confusion_matrix": [
+    [
+      99,
+      8,
+      26
+    ],
+    [
+      30,
+      10,
+      39
+    ],
+    [
+      17,
+      5,
+      116
+    ]
+  ]
+}

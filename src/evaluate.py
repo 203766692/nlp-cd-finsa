@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
 from sklearn.metrics import classification_report, confusion_matrix
 from torch import nn
@@ -20,7 +25,12 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.data_loader import LABEL_NAMES, build_dataset, dataset_summary
 from src.metrics import calculate_metrics
 from src.model import load_checkpoint
-from src.utils import DEFAULT_CONFIG_PATH, load_config, resolve_device
+from src.utils import (
+    DEFAULT_CONFIG_PATH,
+    load_config,
+    resolve_device,
+    resolve_experiment_dir,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,18 +58,20 @@ def merge_eval_config(config: dict[str, Any], args: argparse.Namespace) -> dict[
         "checkpoint": args.checkpoint,
         "test_file": args.test_file,
         "output_file": args.output_file,
-        "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "device": args.device,
     }
     for key, value in overrides.items():
         if value is not None:
             merged[key] = value
+    if args.batch_size is not None:
+        merged["eval_batch_size"] = args.batch_size
 
+    experiment_dir = resolve_experiment_dir(str(merged["experiment_name"]))
     if not merged.get("checkpoint"):
-        merged["checkpoint"] = merged["best_checkpoint"]
+        merged["checkpoint"] = str(experiment_dir / "best_model.pt")
     if not merged.get("output_file"):
-        merged["output_file"] = "results/metrics.json"
+        merged["output_file"] = str(experiment_dir / "metrics.json")
     return merged
 
 
@@ -91,10 +103,12 @@ def build_metric_document(
     predictions: list[int],
     checkpoint_path: Path,
     test_file: str,
+    experiment_name: str,
+    training_config: dict[str, Any],
 ) -> dict[str, Any]:
     """构建完整评估结果。
 
-    输入真实标签、预测标签、checkpoint 路径和测试集路径，
+    输入真实标签、预测标签、checkpoint 路径、测试集路径、实验名称和训练配置，
     返回包含总体指标、分类别指标和混淆矩阵的字典。
     """
     metrics = calculate_metrics(labels, predictions)
@@ -121,6 +135,10 @@ def build_metric_document(
         labels=list(range(len(LABEL_NAMES))),
     )
     return {
+        "experiment_name": experiment_name,
+        "model_name": str(training_config.get("model_name", "")),
+        "use_class_weights": bool(training_config.get("use_class_weights", False)),
+        "seed": int(training_config.get("seed", 0)),
         "checkpoint": str(checkpoint_path.resolve()),
         "test_file": str(Path(test_file).resolve()),
         "num_samples": len(labels),
@@ -131,14 +149,59 @@ def build_metric_document(
     }
 
 
+def plot_confusion_matrix(
+    labels: list[int],
+    predictions: list[int],
+    output_path: Path,
+    experiment_name: str,
+) -> None:
+    """绘制测试集混淆矩阵热力图。
+
+    输入真实标签、预测标签、图片输出路径和实验名称，保存热力图，无返回值。
+    """
+    matrix = confusion_matrix(
+        labels,
+        predictions,
+        labels=list(range(len(LABEL_NAMES))),
+    )
+    figure, axis = plt.subplots(figsize=(6.5, 5.5))
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=LABEL_NAMES,
+        yticklabels=LABEL_NAMES,
+        cbar=False,
+        ax=axis,
+    )
+    axis.set_title(f"Confusion Matrix: {experiment_name}")
+    axis.set_xlabel("Predicted label")
+    axis.set_ylabel("True label")
+    figure.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
+
+
 def evaluate(config: dict[str, Any]) -> Path:
     """执行测试集评估并保存 JSON。
 
-    输入合并后的配置，加载 checkpoint 和测试集，返回指标文件路径。
+    输入合并后的配置，加载对应实验 checkpoint 和测试集，
+    保存指标 JSON 与混淆矩阵图，返回指标文件路径。
     """
+    experiment_name = str(config["experiment_name"]).strip()
+    experiment_dir = resolve_experiment_dir(experiment_name)
     device = resolve_device(str(config["device"]))
     checkpoint_path = Path(str(config["checkpoint"]))
     model, tokenizer, metadata = load_checkpoint(checkpoint_path, device)
+
+    checkpoint_experiment = metadata.get("train_config", {}).get("experiment_name")
+    if checkpoint_experiment and str(checkpoint_experiment) != experiment_name:
+        raise ValueError(
+            f"checkpoint 属于实验 {checkpoint_experiment}，"
+            f"但当前配置为 {experiment_name}"
+        )
 
     label_names = tuple(metadata["label_names"])
     if label_names != LABEL_NAMES:
@@ -160,19 +223,28 @@ def evaluate(config: dict[str, Any]) -> Path:
 
     test_loader = DataLoader(
         test_dataset,
-        batch_size=int(config["batch_size"]),
+        batch_size=int(config.get("eval_batch_size", config["batch_size"])),
         shuffle=False,
         num_workers=int(config.get("num_workers", 0)),
         pin_memory=device.type == "cuda",
     )
     labels, predictions = run_evaluation(model, test_loader, device)
-    document = build_metric_document(labels, predictions, checkpoint_path, test_file)
+    document = build_metric_document(
+        labels,
+        predictions,
+        checkpoint_path,
+        test_file,
+        experiment_name,
+        config,
+    )
 
     output_path = Path(str(config["output_file"]))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(document, file, ensure_ascii=False, indent=2)
         file.write("\n")
+    confusion_path = experiment_dir / "confusion_matrix.png"
+    plot_confusion_matrix(labels, predictions, confusion_path, experiment_name)
 
     metrics = document["metrics"]
     print(
@@ -180,6 +252,7 @@ def evaluate(config: dict[str, Any]) -> Path:
         f"Macro-F1={metrics['macro_f1']:.4f}，MCC={metrics['mcc']:.4f}"
     )
     print(f"指标已写入：{output_path.resolve()}")
+    print(f"混淆矩阵已写入：{confusion_path.resolve()}")
     return output_path
 
 

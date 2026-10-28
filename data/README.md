@@ -34,7 +34,7 @@ python src/clean_chinese_data.py
 - 检查 `answer` 或 `label` 字段；其主标签必须是“积极”“消极”或“中性”。如果提供 `choices`，候选列表中还必须包含至少一个中文标签。
 - 两个条件都满足后才会保留，并记录 `clean_chinese_ratio`（非空白字符中汉字的占比），以便人工抽查。
 
-由于官方数据没有测试集，脚本会从清洗后的训练集中随机切分 10%（固定随机种子 42）作为本地测试集。你可以通过参数调整输入路径或切分比例：
+由于官方数据没有测试集，脚本会从清洗后的训练集中按中文标签分层切分 10% 作为本地测试集。`sklearn.model_selection.train_test_split` 使用 `stratify` 和固定随机种子 42，保证训练集与测试集的积极、中性、消极类别比例一致。你可以通过参数调整输入路径或切分比例：
 
 ```bash
 python src/clean_chinese_data.py \

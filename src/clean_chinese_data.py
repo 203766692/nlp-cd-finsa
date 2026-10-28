@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import random
 import re
 import statistics
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
+
+from sklearn.model_selection import train_test_split
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUTS: tuple[Path, ...] = (
@@ -225,6 +227,29 @@ def has_chinese_label(record: dict[str, Any]) -> bool:
     return found_label
 
 
+def extract_chinese_label(record: dict[str, Any]) -> str:
+    """提取用于分层抽样的中文情感标签。
+
+    输入已通过清洗校验的记录，按 `label`、`answer`、`choices[gold]` 顺序返回中文标签；
+    无法提取时抛出中文错误。
+    """
+    for field in ("label", "answer"):
+        value = record.get(field)
+        if isinstance(value, str) and value in CHINESE_LABELS:
+            return value
+
+    choices = record.get("choices")
+    gold = record.get("gold")
+    if (
+        isinstance(choices, list)
+        and isinstance(gold, int)
+        and 0 <= gold < len(choices)
+        and choices[gold] in CHINESE_LABELS
+    ):
+        return str(choices[gold])
+    raise ValueError(f"样本 {record.get('id', '未知')} 缺少可用的中文标签")
+
+
 def clean_records(
     records: Sequence[Any],
     role: str,
@@ -294,27 +319,36 @@ def split_train_test(
     test_ratio: float,
     seed: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """按固定随机种子切分训练集和测试集。
+    """按标签分层切分训练集和测试集。
 
-    输入清洗后的训练记录、测试集比例和随机种子，
-    返回新的训练集与测试集列表；测试集至少包含一条记录。
+    输入清洗后的训练记录、测试集比例和随机种子，使用标签分层抽样，
+    返回新的训练集与测试集列表，保证两个划分的类别比例尽量一致。
     """
     if len(records) < 2:
         raise ValueError("清洗后的训练集少于 2 条，无法切分训练集和测试集")
 
-    test_count = int(round(len(records) * test_ratio))
-    test_count = min(max(test_count, 1), len(records) - 1)
-    indices = list(range(len(records)))
-    random.Random(seed).shuffle(indices)
-    test_indices = set(indices[:test_count])
+    labels = [extract_chinese_label(record) for record in records]
+    counts = Counter(labels)
+    label_counts = {label: counts[label] for label in CHINESE_LABELS}
+    insufficient_labels = [
+        f"{label}={count}" for label, count in label_counts.items() if count < 2
+    ]
+    if insufficient_labels:
+        raise ValueError(
+            "分层切分要求每个中文标签至少包含 2 条样本，当前为："
+            + "，".join(insufficient_labels)
+        )
 
-    train_records = [
-        record for index, record in enumerate(records) if index not in test_indices
-    ]
-    test_records = [
-        record for index, record in enumerate(records) if index in test_indices
-    ]
-    return train_records, test_records
+    try:
+        train_records, test_records = train_test_split(
+            list(records),
+            test_size=test_ratio,
+            random_state=seed,
+            stratify=labels,
+        )
+    except ValueError as error:
+        raise ValueError(f"按标签分层切分失败：{error}") from error
+    return list(train_records), list(test_records)
 
 
 def write_json(path: Path, records: Sequence[dict[str, Any]]) -> None:
@@ -466,9 +500,21 @@ def run_cleaning(
         train_outputs.append(planned_outputs["test"])
     print_summary(train_summary, train_outputs)
     if "test" not in role_paths:
+        train_labels = [extract_chinese_label(record) for record in cleaned_by_role["train"]]
+        test_labels = [extract_chinese_label(record) for record in cleaned_by_role["test"]]
+        train_counts = Counter(train_labels)
+        test_counts = Counter(test_labels)
         print(
             f"切分结果：训练集样本数={len(cleaned_by_role['train'])}，"
             f"测试集样本数={len(cleaned_by_role['test'])}"
+        )
+        print(
+            "训练集标签分布："
+            + "，".join(f"{label}={train_counts[label]}" for label in CHINESE_LABELS)
+        )
+        print(
+            "测试集标签分布："
+            + "，".join(f"{label}={test_counts[label]}" for label in CHINESE_LABELS)
         )
 
     if "valid" in role_paths:

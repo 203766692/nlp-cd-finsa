@@ -1,6 +1,7 @@
 # 模型与训练配置，默认面向训练机 GPU 环境
 seed: 42
-model_name: hfl/chinese-roberta-wwm-ext
+experiment_name: bert_base
+model_name: bert-base-chinese
 num_labels: 3
 dropout: 0.1
 max_length: 256
@@ -8,8 +9,6 @@ max_length: 256
 train_file: data/CroFinSA/train.json
 valid_file: data/CroFinSA/valid.json
 test_file: data/CroFinSA/test.json
-checkpoint_dir: results/checkpoints
-best_checkpoint: results/checkpoints/best_model.pt
 
 # 常见 8GB 至 12GB 显存可从 batch_size 16 起步
 batch_size: 16
@@ -24,3 +23,5 @@ num_workers: 4
 device: cuda
 fp16: true
 save_best_metric: macro_f1
+use_class_weights: false
+early_stopping_patience: 2

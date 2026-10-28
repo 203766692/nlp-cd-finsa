@@ -15,7 +15,7 @@
 - Macro-F1：对各类别 F1 取等权平均，便于观察小类别表现。
 - MCC：多分类 Matthews 相关系数，兼顾各类别的真阳性、假阳性和假阴性。
 
-项目默认使用 `hfl/chinese-roberta-wwm-ext`，可在 `configs/default.yaml` 或命令行中替换为其他中文预训练模型。
+项目支持 BERT 与 RoBERTa 两种预训练模型，并通过类别权重形成两种方法配置。所有对比实验都由 `configs/default.yaml` 驱动，训练、评估和推理会自动使用 `experiment_name` 对应的独立结果目录。
 
 情感标签仅接受中文“积极”“中性”“消极”，以及内部标准键 positive/neutral/negative；其他标签会直接报错。
 
@@ -30,22 +30,28 @@
 │   ├── README.md                 说明数据集名称、来源或下载地址及数据使用方式。
 │   └── CroFinSA/                 原始数据及已提交的 train/valid/test 清洗数据。
 ├── configs/
-│   └── default.yaml              唯一的训练配置，包含模型名、批大小、学习率、轮数和设备等。
+│   ├── default.yaml              当前正在使用的实验配置。
+│   ├── config_bert_base.yaml     BERT 基础实验预设。
+│   ├── config_bert_improved.yaml BERT 类别权重改进实验预设。
+│   ├── config_roberta_base.yaml  RoBERTa 基础实验预设。
+│   └── config_roberta_improved.yaml RoBERTa 类别权重改进实验预设。
 ├── src/
 │   ├── __init__.py               标记 src 为 Python 模块。
+│   ├── baseline.py               TF-IDF 与逻辑回归基线实验。
 │   ├── clean_chinese_data.py     通过假名过滤和中文标签校验清洗样本，并切分本地测试集。
 │   ├── data_loader.py            读取 JSON、提取正文、归一化中文标签、处理 tokenizer 并构建 Dataset。
 │   ├── model.py                  加载预训练编码器、增加分类头、恢复 checkpoint。
 │   ├── utils.py                  读取 YAML、解析设备、设置随机种子等公共工具函数。
 │   ├── metrics.py                统一计算 ACC、加权 F1、Macro-F1 和 MCC。
-│   ├── train.py                  训练循环、验证、混合精度、梯度累积、最佳模型保存。
-│   ├── evaluate.py               在 test 上计算指标并写入 results/metrics.json。
-│   └── predict.py                加载 checkpoint，对单条或批量文本推理并写入 results/predictions.csv。
+│   ├── train.py                  训练、类权重、早停、历史记录、曲线与 checkpoint 保存。
+│   ├── evaluate.py               测试集指标与混淆矩阵输出。
+│   └── predict.py                加载实验 checkpoint 执行单条或批量推理。
 └── results/
-    ├── .gitkeep                  占位文件，用于保留空目录。
-    ├── metrics.json              评估生成的各项指标结果，运行后产生。
-    ├── predictions.csv           推理生成的预测结果，运行后产生。
-    └── checkpoints/              保存 best_model.pt 和 last_model.pt，目录内容不提交。
+    ├── bert_base/                每个实验独立保存模型、指标和图片。
+    ├── bert_improved/
+    ├── roberta_base/
+    ├── roberta_improved/
+    └── baseline/                 TF-IDF 基线指标与混淆矩阵。
 ```
 
 ## 环境安装
@@ -98,7 +104,7 @@ data/CroFinSA/MapFinSA_valid.json
 python src/clean_chinese_data.py
 ```
 
-脚本采用“剔除假名 + 校验中文标签”的联合清洗策略。`text` 中平假名和片假名占非空白字符的比例超过 0.01 时直接过滤；同时要求 `answer`、`label` 或 `choices` 中出现“积极”“消极”或“中性”标签。训练集切分使用固定随机种子 42，原始文件不会被删除或修改。执行后生成：
+脚本采用“剔除假名 + 校验中文标签”的联合清洗策略。`text` 中平假名和片假名占非空白字符的比例超过 0.01 时直接过滤；同时要求 `answer`、`label` 或 `choices` 中出现“积极”“消极”或“中性”标签。测试集从训练集按标签分层抽取 10%，`random_state=42`，保证训练集与测试集的类别比例一致。原始文件不会被删除或修改。执行后生成：
 
 ```text
 data/CroFinSA/train.json
@@ -119,13 +125,56 @@ python src/clean_chinese_data.py \
 
 ## 使用方法
 
-默认配置在 `configs/default.yaml` 中，面向 GPU 训练机，使用 `cuda`、`batch_size=16` 和混合精度。三个入口脚本会直接读取该配置，不需要传入 `--config`。在仓库根目录运行：
+默认配置在 `configs/default.yaml` 中，面向 GPU 训练机，使用 `cuda`、`batch_size=16` 和混合精度。训练、评估、推理和清洗入口都会直接读取固定路径的默认配置，不需要传入 `--config`。
+
+### 配置切换实验
+
+四个实验预设是完整配置，复制覆盖 `configs/default.yaml` 即可切换。以 BERT 基础实验为例：
+
+```bash
+cp configs/config_bert_base.yaml configs/default.yaml
+python src/train.py
+python src/evaluate.py
+```
+
+PowerShell 用户可运行：
+
+```powershell
+Copy-Item configs/config_bert_base.yaml configs/default.yaml
+python src/train.py
+python src/evaluate.py
+```
+
+五种实验配置如下：
+
+| 实验 | 配置或入口 | 模型 | 改善方法 |
+| --- | --- | --- | --- |
+| BERT 基础 | `config_bert_base.yaml` | `bert-base-chinese` | 无 |
+| BERT 改进 | `config_bert_improved.yaml` | `bert-base-chinese` | 类别权重 |
+| RoBERTa 基础 | `config_roberta_base.yaml` | `hfl/chinese-roberta-wwm-ext` | 无 |
+| RoBERTa 改进 | `config_roberta_improved.yaml` | `hfl/chinese-roberta-wwm-ext` | 类别权重 |
+| 机器学习基线 | `python src/baseline.py` | TF-IDF + 逻辑回归 | 无 |
+
+`use_class_weights: true` 时，训练集会根据三类样本频次计算平衡权重并传入交叉熵损失。`early_stopping_patience` 控制验证指标连续未提升时提前结束训练。
+
+### 深度模型训练
+
+复制所需预设配置后运行：
 
 ```bash
 python src/train.py
 ```
 
-训练结束后，最佳模型保存到 `results/checkpoints/best_model.pt`，最后一轮模型保存到 `results/checkpoints/last_model.pt`。
+训练输出位于 `results/<experiment_name>/`：
+
+```text
+best_model.pt
+last_model.pt
+training_history.json
+training_curves.png
+```
+
+其中曲线图包含训练与验证 Loss 以及验证 Macro-F1。
 
 本地无 GPU 使用 CPU 调试时，不需要额外配置文件，直接在命令行覆盖关键参数：
 
@@ -152,18 +201,44 @@ CPU 调试可运行：
 python src/evaluate.py \
   --device cpu \
   --batch_size 4 \
-  --checkpoint results/checkpoints/best_model.pt \
+  --checkpoint results/bert_base/best_model.pt \
   --test_file data/CroFinSA/test.json
 ```
 
-指标默认写入 `results/metrics.json`，包含总体指标、分类别 precision/recall/F1、支持样本数和混淆矩阵。
+评估结果写入 `results/<experiment_name>/`：
+
+```text
+metrics.json
+confusion_matrix.png
+```
+
+`metrics.json` 包含 ACC、加权 F1、Macro-F1、MCC、分类别指标和混淆矩阵。
+
+### 机器学习基线
+
+运行：
+
+```bash
+python src/baseline.py
+```
+
+基线使用中文字符 1 至 3 gram 的 TF-IDF 特征和逻辑回归，在同一个测试集上计算指标。结果保存在：
+
+```text
+results/baseline/metrics.json
+results/baseline/confusion_matrix.png
+```
+
+深度模型四组实验加上机器学习基线，最终形成五组可对比的实验结果。
+
+### 单条与批量推理
 
 单条文本推理：
 
 ```bash
 python src/predict.py \
   --device cpu \
-  --checkpoint results/checkpoints/best_model.pt \
+  --checkpoint results/bert_base/best_model.pt \
   --text "公司本季度净利润同比增长20%，经营活动现金流明显改善。"
 ```
 
@@ -172,9 +247,9 @@ python src/predict.py \
 ```bash
 python src/predict.py \
   --device cpu \
-  --checkpoint results/checkpoints/best_model.pt \
+  --checkpoint results/bert_base/best_model.pt \
   --input_file data/CroFinSA/test.json \
-  --output_file results/predictions.csv
+  --output_file results/bert_base/predictions.csv
 ```
 
 CSV 输入需包含 `text`、`sentence`、`content` 或 `query` 之一作为文本列，可选包含 `id`。TXT 输入按非空行逐条处理。预测 CSV 包含原始文本、中文标签、置信度和三个类别的概率。
@@ -183,5 +258,6 @@ CSV 输入需包含 `text`、`sentence`、`content` 或 `query` 之一作为文�
 
 - 数据路径不写死在代码中，默认值集中在 `configs/default.yaml`，可通过 `--train_file`、`--valid_file`、`--test_file` 覆盖。
 - 推理和评估优先读取 checkpoint 内记录的模型名称、标签顺序和最大长度，避免训练与部署错位。
-- `data/CroFinSA/` 下清洗后的 JSON 已提交，方便团队成员直接共享；`results/checkpoints/`、缓存和环境变量文件仍不会提交。
+- 每次训练、评估或推理前确认 `experiment_name`，不同实验的产物会分别写入 `results/<experiment_name>/`。
+- `data/CroFinSA/` 下清洗后的 JSON、`results/` 下的模型、PNG 图和 JSON 指标都可以提交，方便团队共享实验产物。
 - 训练机可根据显存调整 `batch_size`、`eval_batch_size` 和 `gradient_accumulation_steps`，不需要新建配置文件。
