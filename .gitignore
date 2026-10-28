@@ -222,3 +222,4 @@ __marimo__/
 # 实验图片和指标 JSON 需要提交
 !results/**/*.png
 !results/**/*.json
+*.pt
