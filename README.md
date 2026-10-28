@@ -79,6 +79,8 @@ pip install -r requirements.txt
 
 依赖文件中的 `torch>=2.0` 会接受已经安装好的 CPU 或 GPU 版本，不会主动替换 CUDA 构建。首次训练或推理时，`transformers` 还需要下载配置中的预训练模型；训练机应确保能够访问 Hugging Face 或已提前准备本地模型目录。
 
+当前模型和 tokenizer 使用 `local_files_only=True` 从本地缓存加载，不会在训练或评估时联网检查更新。首次使用某个模型前，请先下载权重并放入 Hugging Face 缓存，或在配置中填写完整的本地模型目录。
+
 ## 准备数据
 
 本任务的官方数据托管在 GitHub 上，数据地址为：`https://github.com/HgITSE/MapFinBen/tree/main/data`（其中包含 `MapFinSA` 文件夹）。清洗后的数据已经提交到仓库，新成员克隆后可以直接使用：
@@ -155,7 +157,7 @@ python src/evaluate.py
 | RoBERTa 改进 | `config_roberta_improved.yaml` | `hfl/chinese-roberta-wwm-ext` | 类别权重 |
 | 机器学习基线 | `python src/baseline.py` | TF-IDF + 逻辑回归 | 无 |
 
-`use_class_weights: true` 时，训练集会根据三类样本频次计算平衡权重并传入交叉熵损失。`early_stopping_patience` 控制验证指标连续未提升时提前结束训练。
+`use_class_weights: true` 时，训练集会根据三类样本频次计算平衡权重并传入交叉熵损失。所有实验配置默认最多训练 20 轮，并使用 Early Stopping 防止过拟合：当验证指标连续 4 轮没有提升时自动终止训练，并保留验证指标最佳的一轮模型。
 
 ### 深度模型训练
 
@@ -174,7 +176,7 @@ training_history.json
 training_curves.png
 ```
 
-其中曲线图包含训练与验证 Loss 以及验证 Macro-F1。
+其中 `training_curves.png` 使用 1 行 2 列布局。左图绘制训练 Loss 和验证 Loss；右图绘制验证集的 Accuracy、加权 F1、Macro-F1 和 MCC 四条曲线，均包含标题、坐标轴标签和图例。
 
 本地无 GPU 使用 CPU 调试时，不需要额外配置文件，直接在命令行覆盖关键参数：
 

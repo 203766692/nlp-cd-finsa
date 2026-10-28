@@ -15,7 +15,7 @@ batch_size: 16
 eval_batch_size: 32
 learning_rate: 0.00002
 weight_decay: 0.01
-epochs: 5
+epochs: 20
 warmup_ratio: 0.1
 gradient_accumulation_steps: 1
 max_grad_norm: 1.0
@@ -24,4 +24,4 @@ device: cuda
 fp16: true
 save_best_metric: macro_f1
 use_class_weights: true
-early_stopping_patience: 2
+early_stopping_patience: 4

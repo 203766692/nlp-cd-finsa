@@ -182,7 +182,7 @@ def create_loss_function(
 def save_training_history(history: dict[str, list[float]], output_path: Path) -> None:
     """保存逐轮训练历史。
 
-    输入历史字典和输出路径，将 Loss、ACC、F1、Macro-F1、MCC 按 epoch 写入 JSON。
+    输入历史字典和输出路径，将训练与验证 Loss、验证 ACC、F1、Macro-F1、MCC 按 epoch 写入 JSON。
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as file:
@@ -195,25 +195,40 @@ def plot_training_curves(
     output_path: Path,
     experiment_name: str,
 ) -> None:
-    """绘制训练与验证 Loss 以及验证 Macro-F1 曲线。
+    """绘制 Loss 和多项验证指标曲线。
 
-    输入历史字典、输出图片路径和实验名称，生成双面板曲线图，无返回值。
+    输入历史字典、输出图片路径和实验名称；左图绘制训练与验证 Loss，
+    右图绘制验证 Accuracy、F1、Macro-F1、MCC，无返回值。
     """
     epochs = history["epoch"]
-    figure, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    figure, axes = plt.subplots(1, 2, figsize=(14, 5))
     axes[0].plot(epochs, history["train_loss"], marker="o", label="Train loss")
     axes[0].plot(epochs, history["valid_loss"], marker="o", label="Valid loss")
-    axes[0].set_title("Loss")
+    axes[0].set_title("Training and Validation Loss")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Loss")
     axes[0].legend()
     axes[0].grid(alpha=0.25)
 
-    axes[1].plot(epochs, history["macro_f1"], marker="o", color="#2a6f97")
-    axes[1].set_title("Validation Macro-F1")
+    metric_series = (
+        ("valid_accuracy", "Accuracy", "#2a6f97", "o"),
+        ("valid_f1", "Weighted F1", "#e76f51", "s"),
+        ("valid_macro_f1", "Macro-F1", "#2a9d8f", "^"),
+        ("valid_mcc", "MCC", "#8d5a97", "D"),
+    )
+    for history_key, label, color, marker in metric_series:
+        axes[1].plot(
+            epochs,
+            history[history_key],
+            marker=marker,
+            color=color,
+            label=label,
+        )
+    axes[1].set_title("Validation Metrics")
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Macro-F1")
+    axes[1].set_ylabel("Score")
     axes[1].set_ylim(0, 1)
+    axes[1].legend()
     axes[1].grid(alpha=0.25)
 
     figure.suptitle(f"Experiment: {experiment_name}")
@@ -392,10 +407,10 @@ def train(config: dict[str, Any]) -> Path:
         "epoch": [],
         "train_loss": [],
         "valid_loss": [],
-        "accuracy": [],
-        "f1": [],
-        "macro_f1": [],
-        "mcc": [],
+        "valid_accuracy": [],
+        "valid_f1": [],
+        "valid_macro_f1": [],
+        "valid_mcc": [],
     }
     no_improvement_epochs = 0
     print(f"实验名称：{experiment_name}，输出目录：{experiment_dir.resolve()}")
@@ -459,10 +474,10 @@ def train(config: dict[str, Any]) -> Path:
         history["epoch"].append(float(epoch))
         history["train_loss"].append(train_loss)
         history["valid_loss"].append(validation_loss)
-        history["accuracy"].append(validation_metrics["accuracy"])
-        history["f1"].append(validation_metrics["f1"])
-        history["macro_f1"].append(validation_metrics["macro_f1"])
-        history["mcc"].append(validation_metrics["mcc"])
+        history["valid_accuracy"].append(validation_metrics["accuracy"])
+        history["valid_f1"].append(validation_metrics["f1"])
+        history["valid_macro_f1"].append(validation_metrics["macro_f1"])
+        history["valid_mcc"].append(validation_metrics["mcc"])
 
         save_checkpoint(
             path=last_checkpoint,

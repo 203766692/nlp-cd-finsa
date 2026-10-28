@@ -26,7 +26,10 @@ class FinancialSentimentModel(nn.Module):
 
         self.model_name = model_name
         self.num_labels = num_labels
-        self.encoder = AutoModel.from_pretrained(model_name)
+        self.encoder = AutoModel.from_pretrained(
+            model_name,
+            local_files_only=True,
+        )
         hidden_size = int(self.encoder.config.hidden_size)
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(hidden_size, num_labels)
@@ -62,10 +65,15 @@ def load_tokenizer(model_name: str) -> PreTrainedTokenizerBase:
     输入模型名称或本地路径，返回 tokenizer；加载失败时补充中文排查提示。
     """
     try:
-        return AutoTokenizer.from_pretrained(model_name, use_fast=True)
+        return AutoTokenizer.from_pretrained(
+            model_name,
+            use_fast=True,
+            local_files_only=True,
+        )
     except (OSError, ValueError) as error:
         raise RuntimeError(
-            f"无法加载 tokenizer：{model_name}。请检查模型名称、本地路径或网络连接。"
+            f"无法从本地缓存加载 tokenizer：{model_name}。"
+            "请先下载模型并确认 Hugging Face 缓存或本地路径可用。"
         ) from error
 
 
@@ -78,7 +86,8 @@ def create_model(model_name: str, num_labels: int = 3, dropout: float = 0.1) -> 
         return FinancialSentimentModel(model_name, num_labels, dropout)
     except (OSError, ValueError) as error:
         raise RuntimeError(
-            f"无法加载预训练模型：{model_name}。请检查模型名称、本地路径或网络连接。"
+            f"无法从本地缓存加载预训练模型：{model_name}。"
+            "请先下载模型并确认 Hugging Face 缓存或本地路径可用。"
         ) from error
 
 
