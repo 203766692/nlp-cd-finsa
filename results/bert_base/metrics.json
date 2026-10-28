@@ -1,0 +1,57 @@
+{
+  "experiment_name": "bert_base",
+  "model_name": "bert-base-chinese",
+  "use_class_weights": false,
+  "seed": 42,
+  "checkpoint": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\results\\bert_base\\best_model.pt",
+  "test_file": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\data\\CroFinSA\\test.json",
+  "num_samples": 350,
+  "label_names": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "metrics": {
+    "accuracy": 0.631429,
+    "f1": 0.616668,
+    "macro_f1": 0.572604,
+    "mcc": 0.424637
+  },
+  "per_class": {
+    "negative": {
+      "precision": 0.6785714285714286,
+      "recall": 0.7142857142857143,
+      "f1": 0.6959706959706959,
+      "support": 133
+    },
+    "neutral": {
+      "precision": 0.37037037037037035,
+      "recall": 0.25316455696202533,
+      "f1": 0.3007518796992481,
+      "support": 79
+    },
+    "positive": {
+      "precision": 0.6794871794871795,
+      "recall": 0.7681159420289855,
+      "f1": 0.7210884353741497,
+      "support": 138
+    }
+  },
+  "confusion_matrix": [
+    [
+      95,
+      20,
+      18
+    ],
+    [
+      27,
+      20,
+      32
+    ],
+    [
+      18,
+      14,
+      106
+    ]
+  ]
+}

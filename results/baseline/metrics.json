@@ -3,8 +3,8 @@
   "model": "TF-IDF char n-gram + LogisticRegression",
   "seed": 42,
   "use_class_weights": false,
-  "train_file": "D:\\homework\\NLP\\课程设计-第04组\\源代码\\data\\CroFinSA\\train.json",
-  "test_file": "D:\\homework\\NLP\\课程设计-第04组\\源代码\\data\\CroFinSA\\test.json",
+  "train_file": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\data\\CroFinSA\\train.json",
+  "test_file": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\data\\CroFinSA\\test.json",
   "num_train_samples": 3146,
   "num_test_samples": 350,
   "label_names": [

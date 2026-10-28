@@ -1,0 +1,57 @@
+{
+  "experiment_name": "roberta_base",
+  "model_name": "hfl/chinese-roberta-wwm-ext",
+  "use_class_weights": false,
+  "seed": 42,
+  "checkpoint": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\results\\roberta_base\\best_model.pt",
+  "test_file": "C:\\Users\\86159\\Desktop\\课程设计-第04组\\源代码\\data\\CroFinSA\\test.json",
+  "num_samples": 350,
+  "label_names": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "metrics": {
+    "accuracy": 0.68,
+    "f1": 0.66589,
+    "macro_f1": 0.629954,
+    "mcc": 0.507165
+  },
+  "per_class": {
+    "negative": {
+      "precision": 0.7807017543859649,
+      "recall": 0.6691729323308271,
+      "f1": 0.7206477732793523,
+      "support": 133
+    },
+    "neutral": {
+      "precision": 0.5094339622641509,
+      "recall": 0.34177215189873417,
+      "f1": 0.4090909090909091,
+      "support": 79
+    },
+    "positive": {
+      "precision": 0.6666666666666666,
+      "recall": 0.8840579710144928,
+      "f1": 0.7601246105919003,
+      "support": 138
+    }
+  },
+  "confusion_matrix": [
+    [
+      89,
+      18,
+      26
+    ],
+    [
+      17,
+      27,
+      35
+    ],
+    [
+      8,
+      8,
+      122
+    ]
+  ]
+}
